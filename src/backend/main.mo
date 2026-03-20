@@ -117,6 +117,9 @@ actor {
   let accessControlState = AccessControl.initState();
   include MixinAuthorization(accessControlState);
 
+  // Simple direct admin principal - bypasses AccessControl module complexity
+  var adminPrincipal : ?Principal = null;
+
   let userProfiles = Map.empty<Principal, UserProfile>();
   let events = Map.empty<Nat, Event>();
   let bets = Map.empty<Nat, Bet>();
@@ -135,6 +138,13 @@ actor {
       } else {
         winningsComparison;
       };
+    };
+  };
+
+  func isAdminCaller(caller : Principal) : Bool {
+    switch (adminPrincipal) {
+      case (?p) { p == caller };
+      case (null) { false };
     };
   };
 
@@ -172,24 +182,14 @@ actor {
     userProfiles.add(caller, profile);
   };
 
-  // claimAdmin: snapshot all entries first, then demote any admins, then assign caller
+  // claimAdmin: directly assigns caller as admin, no complex logic
   public shared ({ caller }) func claimAdmin() : async Bool {
-    let snapshot = accessControlState.userRoles.entries().toArray();
-    for ((p, r) in snapshot.vals()) {
-      if (r == #admin) {
-        accessControlState.userRoles.add(p, #user);
-      };
-    };
-    accessControlState.userRoles.add(caller, #admin);
-    accessControlState.adminAssigned := true;
+    adminPrincipal := ?caller;
     true;
   };
 
   public query ({ caller }) func isCallerAdminSafe() : async Bool {
-    switch (accessControlState.userRoles.get(caller)) {
-      case (?#admin) { true };
-      case (_) { false };
-    };
+    isAdminCaller(caller);
   };
 
   public query ({ caller }) func getMyProfile() : async UserProfile {
@@ -261,14 +261,14 @@ actor {
   };
 
   public query ({ caller }) func getAllBets() : async [Bet] {
-    if (not AccessControl.isAdmin(accessControlState, caller)) {
+    if (not isAdminCaller(caller)) {
       Runtime.trap("Admin access required");
     };
     bets.values().toArray();
   };
 
   public shared ({ caller }) func createEvent(title : Text, sport : Sport, teamA : Text, teamB : Text, oddsA : Float, oddsX : Float, oddsB : Float) : async Nat {
-    if (not AccessControl.isAdmin(accessControlState, caller)) {
+    if (not isAdminCaller(caller)) {
       Runtime.trap("Admin access required");
     };
     let eventId = nextEventId;
@@ -291,7 +291,7 @@ actor {
   };
 
   public shared ({ caller }) func updateEventStatus(eventId : Nat, status : EventStatus) : async () {
-    if (not AccessControl.isAdmin(accessControlState, caller)) {
+    if (not isAdminCaller(caller)) {
       Runtime.trap("Admin access required");
     };
     let event = getEventInternal(eventId);
@@ -309,7 +309,7 @@ actor {
   };
 
   public shared ({ caller }) func resolveEvent(eventId : Nat, outcome : EventOutcome) : async () {
-    if (not AccessControl.isAdmin(accessControlState, caller)) {
+    if (not isAdminCaller(caller)) {
       Runtime.trap("Admin access required");
     };
     let event = getEventInternal(eventId);
@@ -348,7 +348,7 @@ actor {
   };
 
   public shared ({ caller }) func adminDeposit(user : Principal, amount : Float) : async () {
-    if (not AccessControl.isAdmin(accessControlState, caller)) {
+    if (not isAdminCaller(caller)) {
       Runtime.trap("Admin access required");
     };
     if (amount <= 0.0) { Runtime.trap("Amount must be positive") };
@@ -361,7 +361,7 @@ actor {
   };
 
   public shared ({ caller }) func createTip(sport : Sport, match : Text, prediction : Text, reasoning : Text, odds : Float) : async Nat {
-    if (not AccessControl.isAdmin(accessControlState, caller)) {
+    if (not isAdminCaller(caller)) {
       Runtime.trap("Admin access required");
     };
     let tipId = nextTipId;
@@ -404,8 +404,8 @@ actor {
   };
 
   public shared ({ caller }) func updateTipStatus(tipId : Nat, status : TipStatus) : async () {
-    if (not AccessControl.isAdmin(accessControlState, caller)) {
-      Runtime.trap("Admin access required");
+    if (not isAdminCaller(caller)) {
+      Runtime.trap("Tip not found");
     };
     switch (tips.get(tipId)) {
       case (null) { Runtime.trap("Tip not found") };
