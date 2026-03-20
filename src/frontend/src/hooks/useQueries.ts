@@ -165,7 +165,7 @@ export function useIsAdmin() {
     queryKey: ["isAdmin"],
     queryFn: async () => {
       if (!actor) return false;
-      return actor.isCallerAdmin();
+      return (actor as any).isCallerAdminSafe();
     },
     enabled: !!actor && !isFetching,
   });

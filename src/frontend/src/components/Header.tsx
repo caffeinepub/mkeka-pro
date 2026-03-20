@@ -43,15 +43,11 @@ export function Header({
 
   async function handleClaimAdmin() {
     try {
-      const result = await claimAdmin.mutateAsync();
-      if (result === true) {
-        toast.success("You are now admin! Reload to see Admin Panel.");
-        setTimeout(() => window.location.reload(), 1500);
-      } else {
-        toast.error("Admin already assigned. Contact the current admin.");
-      }
+      await claimAdmin.mutateAsync();
+      toast.success("You are now admin! Reloading...");
+      setTimeout(() => window.location.reload(), 1500);
     } catch {
-      toast.error("Admin already assigned. Contact the current admin.");
+      toast.error("Failed to claim admin. Please try again.");
     }
   }
 
@@ -167,9 +163,9 @@ export function Header({
                       Admin Panel
                     </DropdownMenuItem>
                   )}
-                  {identity && !isAdmin && (
+                  {!isAdmin && (
                     <>
-                      {isAdmin !== undefined && <DropdownMenuSeparator />}
+                      <DropdownMenuSeparator />
                       <DropdownMenuItem
                         onClick={handleClaimAdmin}
                         disabled={claimAdmin.isPending}

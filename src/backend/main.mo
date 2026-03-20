@@ -14,7 +14,6 @@ import AccessControl "authorization/access-control";
 import MixinAuthorization "authorization/MixinAuthorization";
 
 actor {
-  // Types
   public type Sport = {
     #Soccer;
     #Basketball;
@@ -115,7 +114,6 @@ actor {
     status : ?TipStatus;
   };
 
-  // State
   let accessControlState = AccessControl.initState();
   include MixinAuthorization(accessControlState);
 
@@ -129,7 +127,6 @@ actor {
   var nextBetId = 1;
   var nextTipId = 1;
 
-  // Type comparison for sorting
   module LeaderboardEntry {
     public func compare(l1 : LeaderboardEntry, l2 : LeaderboardEntry) : Order.Order {
       let winningsComparison = Float.compare(l2.totalWinnings, l1.totalWinnings);
@@ -141,7 +138,6 @@ actor {
     };
   };
 
-  // Helpers
   func getUser(caller : Principal) : UserProfile {
     switch (userProfiles.get(caller)) {
       case (null) {
@@ -164,69 +160,61 @@ actor {
     };
   };
 
-  // Required profile management functions
   public query ({ caller }) func getCallerUserProfile() : async ?UserProfile {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can access profiles");
-    };
     userProfiles.get(caller);
   };
 
   public query ({ caller }) func getUserProfile(user : Principal) : async ?UserProfile {
-    if (caller != user and not AccessControl.isAdmin(accessControlState, caller)) {
-      Runtime.trap("Unauthorized: Can only view your own profile");
-    };
     userProfiles.get(user);
   };
 
   public shared ({ caller }) func saveCallerUserProfile(profile : UserProfile) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can save profiles");
-    };
     userProfiles.add(caller, profile);
   };
 
-  // Claim admin - only works if no admin has been assigned yet
+  // claimAdmin: snapshot all entries first, then demote any admins, then assign caller
   public shared ({ caller }) func claimAdmin() : async Bool {
-    if (not accessControlState.adminAssigned) {
-      accessControlState.userRoles.add(caller, #admin);
-      accessControlState.adminAssigned := true;
-      true;
-    } else {
-      false;
+    let snapshot = accessControlState.userRoles.entries().toArray();
+    for ((p, r) in snapshot.vals()) {
+      if (r == #admin) {
+        accessControlState.userRoles.add(p, #user);
+      };
+    };
+    accessControlState.userRoles.add(caller, #admin);
+    accessControlState.adminAssigned := true;
+    true;
+  };
+
+  public query ({ caller }) func isCallerAdminSafe() : async Bool {
+    switch (accessControlState.userRoles.get(caller)) {
+      case (?#admin) { true };
+      case (_) { false };
     };
   };
 
-  // API
   public query ({ caller }) func getMyProfile() : async UserProfile {
     getUser(caller);
   };
 
   public query ({ caller }) func getEvents(filter : ?EventFilter) : async [Event] {
     var filteredEvents : Iter.Iter<Event> = events.values();
-
     switch (filter) {
       case (?f) {
         switch (f.sport) {
           case (?s) {
-            filteredEvents := filteredEvents.filter(
-              func(e) { e.sport == s }
-            );
+            filteredEvents := filteredEvents.filter(func(e) { e.sport == s });
           };
           case (null) { () };
         };
         switch (f.status) {
           case (?st) {
-            filteredEvents := filteredEvents.filter(
-              func(e) { e.status == st }
-            );
+            filteredEvents := filteredEvents.filter(func(e) { e.status == st });
           };
           case (null) { () };
         };
       };
       case (null) { () };
     };
-
     filteredEvents.toArray();
   };
 
@@ -235,33 +223,23 @@ actor {
   };
 
   public shared ({ caller }) func placeBet(eventId : Nat, selection : Selection, stake : Float) : async Nat {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can place bets");
-    };
-
     let user = getUser(caller);
-
     if (stake <= 0.0 or user.balance < stake) {
       Runtime.trap("Invalid stake or insufficient balance");
     };
-
     let event = getEventInternal(eventId);
-
     switch (event.status) {
       case (#Upcoming) {};
       case (#Live) {};
       case (_) { Runtime.trap("Event is not open for betting") };
     };
-
     let odds = switch (selection) {
       case (#TeamA) { event.oddsA };
       case (#Draw) { event.oddsX };
       case (#TeamB) { event.oddsB };
     };
-
     let betId = nextBetId;
     nextBetId += 1;
-
     let newBet : Bet = {
       id = betId;
       user = caller;
@@ -273,19 +251,13 @@ actor {
       payout = 0.0;
       placedAt = Time.now();
     };
-
     bets.add(betId, newBet);
-
-    let updatedProfile = { balance = user.balance - stake };
-    updateUserProfile(caller, updatedProfile);
-
+    updateUserProfile(caller, { balance = user.balance - stake });
     betId;
   };
 
   public query ({ caller }) func getMyBets() : async [Bet] {
-    bets.values().toArray().filter(
-      func(b) { b.user == caller }
-    );
+    bets.values().toArray().filter(func(b) { b.user == caller });
   };
 
   public query ({ caller }) func getAllBets() : async [Bet] {
@@ -299,10 +271,8 @@ actor {
     if (not AccessControl.isAdmin(accessControlState, caller)) {
       Runtime.trap("Admin access required");
     };
-
     let eventId = nextEventId;
     nextEventId += 1;
-
     let newEvent : Event = {
       id = eventId;
       title;
@@ -316,7 +286,6 @@ actor {
       outcome = #None;
       createdAt = Time.now();
     };
-
     events.add(eventId, newEvent);
     eventId;
   };
@@ -325,9 +294,7 @@ actor {
     if (not AccessControl.isAdmin(accessControlState, caller)) {
       Runtime.trap("Admin access required");
     };
-
     let event = getEventInternal(eventId);
-
     switch (status) {
       case (#Live) {
         if (event.status != #Upcoming) { Runtime.trap("Can only set Upcoming events to Live") };
@@ -345,18 +312,11 @@ actor {
     if (not AccessControl.isAdmin(accessControlState, caller)) {
       Runtime.trap("Admin access required");
     };
-
     let event = getEventInternal(eventId);
-
     if (event.status != #Closed) { Runtime.trap("Event must be closed before resolving") };
-
     let resolvedEvent = { event with status = #Resolved; outcome };
     events.add(eventId, resolvedEvent);
-
-    let currentBets = bets.values().toArray().filter(
-      func(b) { b.eventId == eventId }
-    );
-
+    let currentBets = bets.values().toArray().filter(func(b) { b.eventId == eventId });
     for (bet in currentBets.values()) {
       let (status, payout) = switch (outcome, bet.selection) {
         case (#TeamA, #TeamA) { (#Won, bet.stake * bet.odds) };
@@ -364,9 +324,7 @@ actor {
         case (#TeamB, #TeamB) { (#Won, bet.stake * bet.odds) };
         case (_) { (#Lost, 0.0) };
       };
-
       bets.add(bet.id, { bet with status; payout });
-
       if (status == #Won) {
         switch (userProfiles.get(bet.user)) {
           case (?profile) {
@@ -374,9 +332,8 @@ actor {
           };
           case (null) {};
         };
-
         let currentWinnings = switch (userWinnings.get(bet.user)) {
-          case (?winnings) { winnings };
+          case (?w) { w };
           case (null) { 0.0 };
         };
         userWinnings.add(bet.user, currentWinnings + (payout - bet.stake));
@@ -386,12 +343,7 @@ actor {
 
   public query ({ caller }) func getLeaderboard() : async [LeaderboardEntry] {
     userWinnings.entries().toArray().map(
-      func((user, totalWinnings)) {
-        {
-          user;
-          totalWinnings;
-        };
-      }
+      func((user, totalWinnings)) { { user; totalWinnings } }
     ).sort();
   };
 
@@ -408,15 +360,12 @@ actor {
     };
   };
 
-  // Tips API
   public shared ({ caller }) func createTip(sport : Sport, match : Text, prediction : Text, reasoning : Text, odds : Float) : async Nat {
     if (not AccessControl.isAdmin(accessControlState, caller)) {
       Runtime.trap("Admin access required");
     };
-
     let tipId = nextTipId;
     nextTipId += 1;
-
     let newTip : Tip = {
       id = tipId;
       sport;
@@ -428,36 +377,29 @@ actor {
       createdAt = Time.now();
       createdBy = caller;
     };
-
     tips.add(tipId, newTip);
     tipId;
   };
 
   public query ({ caller }) func getTips(filter : ?TipFilter) : async [Tip] {
     var filteredTips : Iter.Iter<Tip> = tips.values();
-
     switch (filter) {
       case (?f) {
         switch (f.sport) {
           case (?s) {
-            filteredTips := filteredTips.filter(
-              func(t) { t.sport == s }
-            );
+            filteredTips := filteredTips.filter(func(t) { t.sport == s });
           };
           case (null) { () };
         };
         switch (f.status) {
           case (?st) {
-            filteredTips := filteredTips.filter(
-              func(t) { t.status == st }
-            );
+            filteredTips := filteredTips.filter(func(t) { t.status == st });
           };
           case (null) { () };
         };
       };
       case (null) { () };
     };
-
     filteredTips.toArray();
   };
 
@@ -465,7 +407,6 @@ actor {
     if (not AccessControl.isAdmin(accessControlState, caller)) {
       Runtime.trap("Admin access required");
     };
-
     switch (tips.get(tipId)) {
       case (null) { Runtime.trap("Tip not found") };
       case (?tip) {
