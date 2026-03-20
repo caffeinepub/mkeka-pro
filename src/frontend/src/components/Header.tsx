@@ -3,13 +3,15 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Bell, Lightbulb, Search, User } from "lucide-react";
+import { Bell, Lightbulb, Search, ShieldCheck, User } from "lucide-react";
+import { toast } from "sonner";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
-import { useIsAdmin, useMyProfile } from "../hooks/useQueries";
+import { useClaimAdmin, useIsAdmin, useMyProfile } from "../hooks/useQueries";
 
 interface HeaderProps {
   activeNav: string;
@@ -27,6 +29,7 @@ export function Header({
   const { login, clear, identity, isLoggingIn } = useInternetIdentity();
   const { data: profile } = useMyProfile();
   const { data: isAdmin } = useIsAdmin();
+  const claimAdmin = useClaimAdmin();
   const navigate = useNavigate();
 
   const navLinks = [
@@ -37,6 +40,20 @@ export function Header({
     { id: "esports", label: "ESPORTS", route: null },
     { id: "news", label: "NEWS", route: null },
   ];
+
+  async function handleClaimAdmin() {
+    try {
+      const result = await claimAdmin.mutateAsync();
+      if (result === true) {
+        toast.success("You are now admin! Reload to see Admin Panel.");
+        setTimeout(() => window.location.reload(), 1500);
+      } else {
+        toast.error("Admin already assigned. Contact the current admin.");
+      }
+    } catch {
+      toast.error("Admin already assigned. Contact the current admin.");
+    }
+  }
 
   return (
     <header
@@ -150,6 +167,22 @@ export function Header({
                       Admin Panel
                     </DropdownMenuItem>
                   )}
+                  {identity && !isAdmin && (
+                    <>
+                      {isAdmin !== undefined && <DropdownMenuSeparator />}
+                      <DropdownMenuItem
+                        onClick={handleClaimAdmin}
+                        disabled={claimAdmin.isPending}
+                        className="cursor-pointer gap-2 font-semibold"
+                        style={{ color: "oklch(var(--primary))" }}
+                        data-ocid="header.claim_admin.button"
+                      >
+                        <ShieldCheck className="h-4 w-4" />
+                        {claimAdmin.isPending ? "Claiming..." : "Become Admin"}
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem
                     onClick={clear}
                     className="cursor-pointer text-destructive"

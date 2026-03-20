@@ -171,6 +171,20 @@ export function useIsAdmin() {
   });
 }
 
+export function useClaimAdmin() {
+  const { actor } = useActor();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      if (!actor) throw new Error("Not connected");
+      return (actor as any).claimAdmin();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["isAdmin"] });
+    },
+  });
+}
+
 export function useAllBets() {
   const { actor, isFetching } = useActor();
   return useQuery<Bet[]>({

@@ -186,6 +186,17 @@ actor {
     userProfiles.add(caller, profile);
   };
 
+  // Claim admin - only works if no admin has been assigned yet
+  public shared ({ caller }) func claimAdmin() : async Bool {
+    if (not accessControlState.adminAssigned) {
+      accessControlState.userRoles.add(caller, #admin);
+      accessControlState.adminAssigned := true;
+      true;
+    } else {
+      false;
+    };
+  };
+
   // API
   public query ({ caller }) func getMyProfile() : async UserProfile {
     getUser(caller);
